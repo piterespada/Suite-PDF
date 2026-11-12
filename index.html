@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Suite PDF · OCR e Índices</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="brand-logo">PDF</span><span class="brand-name">Suite local</span></div>
+      <nav class="tabs" role="tablist" aria-label="Herramientas">
+        <button class="tab active" role="tab" id="tabbtn-ocr" aria-controls="tab-ocr" aria-selected="true" data-tab="ocr">
+          <span class="tab-ico">🔍</span><span class="tab-text">Motor OCR</span>
+        </button>
+        <button class="tab" role="tab" id="tabbtn-toc" aria-controls="tab-toc" aria-selected="false" data-tab="toc">
+          <span class="tab-ico">🔖</span><span class="tab-text">Índice y marcadores</span>
+        </button>
+      </nav>
+      <span class="offline-pill" title="Todo el procesamiento ocurre en tu navegador">100% local</span>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- ============ PESTAÑA 1: OCR ============ -->
+    <section id="tab-ocr" class="panel active" role="tabpanel" aria-labelledby="tabbtn-ocr">
+      <div class="panel-head">
+        <h1>Motor OCR Avanzado de Alta Eficiencia</h1>
+        <p>Convierte PDFs escaneados (por ejemplo de Archive.org) en PDFs con texto seleccionable. Las imágenes originales quedan intactas: solo se añade una capa de texto invisible.</p>
+      </div>
+
+      <div class="grid">
+        <div class="col">
+          <div class="card">
+            <label class="dropzone" id="ocr-drop" tabindex="0">
+              <input type="file" id="ocr-file" accept="application/pdf,.pdf" hidden>
+              <div class="drop-ico">📄</div>
+              <div class="drop-title">Arrastra aquí el PDF escaneado</div>
+              <div class="drop-sub">o <span class="link">selecciónalo desde tu equipo</span> · un archivo a la vez</div>
+            </label>
+            <div class="fileinfo hidden" id="ocr-fileinfo"></div>
+          </div>
+
+          <div class="card">
+            <h2>Idiomas del libro</h2>
+            <div class="presets">
+              <button class="chip-btn" data-preset="spa">Español</button>
+              <button class="chip-btn" data-preset="eng">Inglés</button>
+              <button class="chip-btn" data-preset="spa+eng">Español + Inglés</button>
+            </div>
+            <div class="langs" id="ocr-langs-main"></div>
+            <details class="more-langs">
+              <summary>Más idiomas (alfabeto latino)</summary>
+              <div class="langs" id="ocr-langs-more"></div>
+            </details>
+            <p class="hint">Combinar varios idiomas es más lento. La capa de texto invisible usa codificación Latin-1: letras como ł, č, ő o ş se simplifican a su letra base.</p>
+          </div>
+
+          <div class="card">
+            <h2>Ajustes de procesamiento</h2>
+            <div class="form-grid">
+              <label class="field"><span>Calidad del modelo</span>
+                <select id="ocr-quality">
+                  <option value="fast">Rápido</option>
+                  <option value="balanced" selected>Equilibrado</option>
+                  <option value="best">Máxima precisión (más lento)</option>
+                </select>
+              </label>
+              <label class="field"><span>Tamaño de lote</span>
+                <select id="ocr-batch">
+                  <option value="10">10 páginas</option>
+                  <option value="20" selected>20 páginas</option>
+                  <option value="40">40 páginas</option>
+                </select>
+              </label>
+              <label class="field"><span>Segmentación de página</span>
+                <select id="ocr-psm">
+                  <option value="3" selected>Automática (recomendada)</option>
+                  <option value="1">Automática con orientación</option>
+                  <option value="4">Una columna de texto</option>
+                  <option value="6">Bloque uniforme</option>
+                </select>
+              </label>
+            </div>
+            <div class="checks">
+              <label class="check"><input type="checkbox" id="ocr-shadows" checked><span>Eliminar sombras y pliegues del lomo</span></label>
+              <label class="check"><input type="checkbox" id="ocr-contrast" checked><span>Normalizar contraste</span></label>
+              <label class="check"><input type="checkbox" id="ocr-binarize" checked><span>Binarización adaptativa</span></label>
+              <label class="check"><input type="checkbox" id="ocr-despeckle" checked><span>Quitar ruido de fondo</span></label>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="ocr-start" disabled>Iniciar OCR</button>
+              <button class="btn" id="ocr-cancel" disabled>Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card">
+            <div class="status idle" id="ocr-status" role="status" aria-live="polite">
+              <span class="dot"></span><span class="status-text">En reposo. Carga un PDF para comenzar.</span>
+            </div>
+            <div class="progress-block">
+              <div class="progress-label"><span id="ocr-stage">Sin actividad</span><span id="ocr-pct">0%</span></div>
+              <div class="bar"><div class="bar-fill" id="ocr-bar"></div></div>
+              <div class="progress-label small"><span id="ocr-batchinfo">Lote —</span><span id="ocr-eta"></span></div>
+              <div class="bar thin"><div class="bar-fill alt" id="ocr-bar2"></div></div>
+            </div>
+            <div class="actions">
+              <button class="btn success" id="ocr-download" disabled>⬇ Descargar PDF con texto</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="preview-head">
+              <h2>Vista previa</h2>
+              <div class="pager">
+                <button class="icon-btn" id="ocr-prev" title="Página anterior" disabled>‹</button>
+                <span id="ocr-pageinfo">—</span>
+                <button class="icon-btn" id="ocr-next" title="Página siguiente" disabled>›</button>
+              </div>
+            </div>
+            <div class="preview-box"><canvas id="ocr-preview"></canvas><div class="preview-empty" id="ocr-preview-empty">Sin documento</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PESTAÑA 2: ÍNDICE ============ -->
+    <section id="tab-toc" class="panel" role="tabpanel" aria-labelledby="tabbtn-toc">
+      <div class="panel-head">
+        <h1>Generador de Tabla de Contenidos Algorítmica y Marcadores</h1>
+        <p>Lee el índice impreso del libro, calcula solo el desfase de páginas y lo confirma con los títulos reales. Escribe marcadores nativos (los de tu Kobo) sin tocar imágenes, gráficos ni maquetación.</p>
+      </div>
+
+      <div class="card">
+        <label class="dropzone compact" id="toc-drop" tabindex="0">
+          <input type="file" id="toc-file" accept="application/pdf,.pdf" hidden>
+          <div class="drop-ico">📘</div>
+          <div>
+            <div class="drop-title">Arrastra aquí el PDF con texto</div>
+            <div class="drop-sub">o <span class="link">selecciónalo desde tu equipo</span></div>
+          </div>
+        </label>
+        <div class="fileinfo hidden" id="toc-fileinfo"></div>
+      </div>
+
+      <div class="grid">
+        <div class="col wide">
+          <div class="card">
+            <h2>Detección de capítulos</h2>
+            <div class="form-grid">
+              <label class="field"><span>Modo de detección</span>
+                <select id="toc-mode">
+                  <option value="auto" selected>Automático: usar el índice impreso del libro (recomendado)</option>
+                  <option value="both">Combinado (regex + tipografía + estructura)</option>
+                  <option value="regex">A · Expresiones regulares</option>
+                  <option value="typo">B · Análisis tipográfico</option>
+                </select>
+              </label>
+              <label class="field"><span>Niveles máximos</span>
+                <select id="toc-levels"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option></select>
+              </label>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="toc-detect" disabled>Detectar capítulos</button>
+              <button class="btn" id="toc-cancel" disabled>Cancelar</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="table-head">
+              <h2>Tabla de contenidos <span class="count" id="toc-count">0</span></h2>
+              <div class="table-tools">
+                <span class="shift-box" title="Suma o resta páginas a TODAS las entradas, por si el desfase automático no es exacto">
+                  <input type="number" id="toc-shift" value="0" step="1" aria-label="Páginas a desplazar">
+                  <button class="btn small" id="toc-shift-btn" disabled>Desplazar páginas</button>
+                </span>
+                <button class="btn small" id="toc-add" disabled>＋ Agregar</button>
+                <button class="btn small" id="toc-sort" disabled>Ordenar por página</button>
+                <button class="btn small" id="toc-clear" disabled>Vaciar</button>
+              </div>
+            </div>
+            <p class="hint" id="toc-info"></p>
+            <div class="table-wrap">
+              <table class="toc-table" id="toc-table">
+                <thead><tr><th class="c-inc"></th><th class="c-lvl">Nivel</th><th>Título</th><th class="c-pg">Pág.</th><th class="c-src">Origen</th><th class="c-act"></th></tr></thead>
+                <tbody id="toc-body"><tr class="empty-row"><td colspan="6">Aún no hay entradas. Detecta capítulos o agrega las tuyas.</td></tr></tbody>
+              </table>
+            </div>
+            <div class="status idle" id="toc-status" role="status" aria-live="polite">
+              <span class="dot"></span><span class="status-text">En reposo. Carga un PDF para comenzar.</span>
+            </div>
+            <div class="progress-block">
+              <div class="progress-label"><span id="toc-stage">Sin actividad</span><span id="toc-pct">0%</span></div>
+              <div class="bar"><div class="bar-fill" id="toc-bar"></div></div>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="toc-generate" disabled>Generar PDF con marcadores</button>
+              <button class="btn success" id="toc-download" disabled>⬇ Descargar PDF</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card">
+            <div class="preview-head">
+              <h2>Vista previa</h2>
+              <div class="pager">
+                <button class="icon-btn" id="toc-prev" title="Página anterior" disabled>‹</button>
+                <input type="number" id="toc-pageinput" min="1" value="1" disabled>
+                <span id="toc-pagetotal">/ —</span>
+                <button class="icon-btn" id="toc-next" title="Página siguiente" disabled>›</button>
+              </div>
+            </div>
+            <div class="preview-box"><canvas id="toc-preview"></canvas><div class="preview-empty" id="toc-preview-empty">Sin documento</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ CONSOLA DE ESTADO ============ -->
+  <footer class="console collapsed" id="console">
+    <div class="console-bar" id="console-bar">
+      <button class="console-toggle" id="console-toggle" aria-expanded="false">▲ Consola de estado <span class="console-count" id="console-count">0</span></button>
+      <div class="console-tools">
+        <button class="btn small ghost" id="console-copy">Copiar</button>
+        <button class="btn small ghost" id="console-clear">Limpiar</button>
+      </div>
+    </div>
+    <div class="console-body" id="console-body" role="log" aria-live="off"></div>
+  </footer>
+
+  <!-- Dependencia principal en hilo de interfaz: PDF.js (renderizado y extracción de texto).
+       pdf-lib y Tesseract.js se cargan dentro de los Web Workers. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/pdf-loader.js"></script>
+  <script src="js/toc-analyzer.js"></script>
+  <script src="js/ocr.worker.js"></script>
+  <script src="js/toc.worker.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
