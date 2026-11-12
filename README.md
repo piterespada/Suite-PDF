@@ -16,9 +16,14 @@ App web de una sola página que corre **100 % en tu navegador** (sin servidor, s
 
 ## Cómo usarla
 
-1. Descarga o clona el repositorio y abre `index.html` con doble clic (Chrome, Edge o Firefox recientes).
-2. La **primera vez** necesita internet para descargar las librerías (PDF.js, pdf-lib, Tesseract.js) y el modelo del idioma; después quedan en la caché del navegador.
-3. Si prefieres servirla: `python3 -m http.server` dentro de la carpeta y abre http://localhost:8000.
+**En línea, sin descargar nada:** abre <https://piterespada.github.io/Suite-PDF/> en Chrome, Edge o Firefox. Las librerías (PDF.js, pdf-lib, Tesseract.js) las carga tu navegador solo y las guarda en caché; tus PDFs nunca salen de tu equipo.
+
+**Sin conexión:** descarga el repositorio y abre `index.html` con doble clic, o sírvelo con `python3 -m http.server` y abre http://localhost:8000.
+
+La primera vez se descargan las librerías y el modelo del idioma del OCR; después quedan en la caché del navegador.
+
+### Publicar tu propia copia en GitHub Pages
+En tu repositorio: **Settings → Pages → Source: Deploy from a branch → Branch: `main` / `(root)` → Save**. En un minuto queda disponible en `https://TU-USUARIO.github.io/NOMBRE-DEL-REPO/`.
 
 ## Estructura
 
