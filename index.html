@@ -163,6 +163,23 @@
               <label class="field"><span>Niveles máximos</span>
                 <select id="toc-levels"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option></select>
               </label>
+              <label class="field" id="toc-loc-field"><span>Ubicación del índice impreso</span>
+                <select id="toc-loc">
+                  <option value="auto" selected>Detectar automáticamente (te pregunto si es correcto)</option>
+                  <option value="manual">Indicar yo las páginas del índice</option>
+                </select>
+              </label>
+              <label class="field hidden" id="toc-range-field"><span>Páginas del índice en el PDF</span>
+                <input type="text" id="toc-range" placeholder="Ej.: 5-8  ·  o varias: 5-6, 9" autocomplete="off" spellcheck="false">
+              </label>
+            </div>
+            <p class="hint hidden" id="toc-loc-hint">Usa el número de página del visor del PDF (no el impreso en el libro). Si el índice ocupa varias páginas, escribe el rango, por ejemplo <b>5-8</b>.</p>
+
+            <div class="confirm hidden" id="toc-confirm" role="alertdialog" aria-live="polite" aria-labelledby="toc-confirm-title">
+              <div class="confirm-title" id="toc-confirm-title"></div>
+              <p class="confirm-text" id="toc-confirm-text"></p>
+              <ol class="confirm-list hidden" id="toc-confirm-list"></ol>
+              <div class="actions" id="toc-confirm-actions"></div>
             </div>
             <div class="actions">
               <button class="btn primary" id="toc-detect" disabled>Detectar capítulos</button>
