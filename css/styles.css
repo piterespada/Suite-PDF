@@ -164,3 +164,15 @@ select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .log-line { white-space: pre-wrap; word-break: break-word; }
 .log-line .t { color: #64748b; } .log-line .s { color: #a78bfa; }
 .log-line.info .m { color: #cbd5e1; } .log-line.warn .m { color: #fbbf24; } .log-line.error .m { color: #f87171; } .log-line.ok .m { color: #4ade80; }
+
+/* Confirmación del índice impreso */
+.confirm { margin: 4px 0 12px; padding: 14px 16px; border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 12px; }
+.confirm.warn { border-color: var(--amber); background: var(--amber-soft); }
+.confirm-title { font-weight: 700; margin-bottom: 4px; }
+.confirm-text { color: var(--muted); font-size: .88rem; margin: 0 0 8px; }
+.confirm-list { margin: 0 0 10px; padding: 0; list-style: none; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: .86rem; }
+.confirm-list li { display: flex; gap: 10px; justify-content: space-between; padding: 5px 10px; border-bottom: 1px solid var(--border); }
+.confirm-list li:last-child { border-bottom: 0; }
+.confirm-list .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.confirm-list .n { color: var(--muted); font-family: var(--mono); flex: none; }
+.confirm-list li.part .t { font-weight: 700; }

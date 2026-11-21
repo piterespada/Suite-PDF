@@ -32,7 +32,15 @@
   const RE_LEADERS = /(\.{3,}|(?:\.\s){3,}|…+)\s*\d{1,4}\s*$/;
 
   // ---------- Construcción de líneas a partir de ítems de PDF.js ----------
+  // Las líneas de cada página se calculan una sola vez (la detección, la localización del índice
+  // y su vista previa trabajan sobre las mismas páginas).
+  const LINES_CACHE = new WeakMap();
   function buildLines(page) {
+    let r = LINES_CACHE.get(page);
+    if (!r) { r = buildLinesRaw(page); LINES_CACHE.set(page, r); }
+    return r;
+  }
+  function buildLinesRaw(page) {
     const items = page.items.slice().sort((a, b) => (b.y - a.y) || (a.x - b.x));
     const lines = [];
     for (const it of items) {
@@ -293,6 +301,8 @@
   const TOC_HEADERS = new Set(['contenido', 'contenidos', 'indice', 'indice general', 'tabla de contenido', 'tabla de contenidos', 'sumario', 'contenido general', 'contents', 'table of contents', 'summary'].map(norm));
   const STOP_LIST = /^(indice|lista|listado|list|tabla|table) (de|of) (figuras|ilustraciones|tablas|graficos|cuadros|mapas|laminas|figures|illustrations|tables|maps|plates)/;
   const RE_TOC_LEADER = /^(.*?\S)\s*(?:\.{2,}|(?:\.\s){2,}|…+|·{2,}|_{2,}|-{3,})\s*(\d{1,4}|[ivxlcdm]{1,7})\s*$/i;
+  // Variante tolerante para textos con OCR: los puntos guía salen como «. , . : '» o mezclados con espacios.
+  const RE_TOC_LOOSE = /^(.*?\S)((?:[\s.·…_,:;'"`´‘’*•\-–—]){4,})(\d{1,4}|[ivxlcdm]{1,7})$/i;
   const NUMTOK = /^(\d{1,4}|[ivxlcdm]{1,7})$/i;
   const CONNECT = /(?:\b(?:de|del|la|el|los|las|y|e|en|a|al|con|por|para|the|of|and|in|to|for|an)|[,;:\-–—])$/i;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -301,7 +311,9 @@
   function parseTocLine(l) {
     let title, num;
     const m = l.text.match(RE_TOC_LEADER);
+    const m2 = m ? null : l.text.match(RE_TOC_LOOSE);
     if (m) { title = m[1]; num = m[2]; }
+    else if (m2 && m2[2].replace(/\s/g, '').length >= 3) { title = m2[1]; num = m2[3]; }
     else if (l.p && l.p.length >= 2) {
       const last = l.p[l.p.length - 1], prev = l.p[l.p.length - 2];
       const s = last.s.trim();
@@ -310,7 +322,7 @@
       }
     }
     if (!num) return null;
-    title = title.replace(/[\s.·…_\-–—]+$/, '').trim();
+    title = title.replace(/[\s.·…_,:;'"`´‘’*•\-–—]+$/, '').trim();
     if (title.length < 2 || !/[A-Za-zÁÉÍÓÚÑáéíóúñ]{2}/.test(title)) return null;
     const arabic = /^\d+$/.test(num);
     if (!arabic && !isRoman(num.toUpperCase())) return null;
@@ -467,7 +479,8 @@
     if (!block) return null;
     const { items, tocTitle, used } = readTocBlock(pagesLines, block.pages);
     const numbered = items.filter((i) => !i.isPart && (i.printed !== null || i.roman));
-    if (numbered.length < 3) return null;
+    // Si la persona indicó las páginas del índice, basta con 2 entradas reconocibles.
+    if (numbered.length < (ctx && ctx.forced ? 2 : 3)) return null;
     const tocSet = new Set(used);
     const tocFirst = used[0] + 1, tocLast = used[used.length - 1] + 1;
     inferLevels(items, o.maxLevels);
@@ -619,12 +632,12 @@
   }
 
   /** Cálculos compartidos por todas las estrategias (una sola pasada por el documento). */
-  function prepare(pages) {
+  function prepare(pages, forcedPages) {
     const pagesLines = pages.map(buildLines);
     const headers = findRunningHeaders(pagesLines, pages.length);
     const { bodySize, bodyFont } = bodyStats(pagesLines);
     const auto = bodySize ? autoRatio(pagesLines, bodySize, headers) : { ratio: 1.25, strong: 0 };
-    const block = findTocBlock(pagesLines);
+    const block = forcedPages && forcedPages.length ? { pages: forcedPages.slice(), score: 0 } : findTocBlock(pagesLines);
     const tocIdx = new Set();
     pagesLines.forEach((lines, i) => { if (looksLikeTocPage(lines)) tocIdx.add(i); });
     if (block) readTocBlock(pagesLines, block.pages).used.forEach((i) => tocIdx.add(i));
@@ -637,7 +650,7 @@
         if (m && l.text.length <= 80 && !RE_LEADERS.test(l.text)) { if (m[1].includes('.')) dotted++; tops.add(m[1].split('.')[0]); }
       }
     });
-    return { N: pages.length, pagesLines, headers, bodySize, bodyFont, ratio: auto.ratio, strongCount: auto.strong, block, tocIdx, decimalOk: dotted >= 3 && tops.size >= 3 };
+    return { N: pages.length, pagesLines, headers, bodySize, bodyFont, ratio: auto.ratio, strongCount: auto.strong, block, forced: !!(forcedPages && forcedPages.length), tocIdx, decimalOk: dotted >= 3 && tops.size >= 3 };
   }
 
   /** Rasgos de expresión regular de una línea (capítulo, parte, romano, palabra clave…). */
@@ -805,6 +818,51 @@
     return bs >= 0.6 ? best : null;
   }
 
+  // ---------- Ubicación del índice: automática, manual y vista previa ----------
+  /** «5-8, 10» → páginas 1-based; ver parseRange. Devuelve texto legible de un arreglo de índices 0-based. */
+  function rangeLabel(idx) {
+    const p = idx.map((i) => i + 1).sort((a, b) => a - b);
+    const out = [];
+    for (let i = 0; i < p.length;) {
+      let j = i;
+      while (j + 1 < p.length && p[j + 1] === p[j] + 1) j++;
+      out.push(j > i ? p[i] + '–' + p[j] : String(p[i]));
+      i = j + 1;
+    }
+    return out.join(', ');
+  }
+
+  /** Convierte «5-8», «5-8, 10» o «5 6 7» (páginas del PDF, desde 1) en índices 0-based.
+   *  Devuelve { pages } o { error }. */
+  function parseRange(str, N) {
+    const s = String(str || '').toLowerCase().replace(/[–—]/g, '-').replace(/\s+(?:a|al|hasta)\s+/g, '-').replace(/\s*-\s*/g, '-').trim();
+    if (!s) return { error: 'Escribe las páginas del índice, por ejemplo 5-8.' };
+    const set = new Set();
+    for (const part of s.split(/[,;\s]+/).filter(Boolean)) {
+      const m = part.match(/^(\d+)(?:-(\d+))?$/);
+      if (!m) return { error: '«' + part + '» no es un número de página ni un rango válido. Usa el formato 5-8 o 5-8, 10.' };
+      const a = parseInt(m[1], 10), b = m[2] ? parseInt(m[2], 10) : a;
+      if (a < 1 || b < a) return { error: 'El rango «' + part + '» no es válido.' };
+      if (b > N) return { error: 'El PDF tiene ' + N + ' páginas; «' + part + '» se sale del documento.' };
+      for (let p = a; p <= b; p++) set.add(p - 1);
+    }
+    return { pages: Array.from(set).sort((x, y) => x - y) };
+  }
+
+  /** Busca por sí sola dónde está el índice impreso. Devuelve índices 0-based o null. */
+  function locateToc(pages) {
+    const block = findTocBlock(pages.map(buildLines));
+    return block ? block.pages.slice() : null;
+  }
+
+  /** Lee las páginas indicadas como índice y devuelve cuántas entradas reconoce y su lista
+   *  (para que la persona confirme que es el índice correcto antes de usarlo). */
+  function previewToc(pages, idx) {
+    const r = readTocBlock(pages.map(buildLines), idx);
+    const entries = r.items.map((i) => ({ title: i.title, printed: i.printed !== null ? String(i.printed) : (i.roman || ''), pdfPage: i.pg + 1, isPart: !!i.isPart }));
+    return { pages: r.used.slice(), count: entries.filter((e) => !e.isPart && e.printed).length, entries };
+  }
+
   function analyze(pages, mode, opts) {
     const o = Object.assign({ startPage: 2, maxLevels: 3, skipTocPages: true }, opts || {});
     const totalChars = pages.reduce((s, p) => s + p.items.reduce((t, i) => t + i.str.length, 0), 0);
@@ -813,7 +871,7 @@
       warnings.push('El PDF casi no contiene texto: probablemente es un escaneo. Pasa primero por la pestaña de OCR.');
       return { entries: [], warnings, totalChars, info: null };
     }
-    const ctx = prepare(pages);
+    const ctx = prepare(pages, o.tocPages || null);
     ctx.cands = collectCandidates(ctx);
     ctx.headingSet = new Set(ctx.cands.map((c) => c.line));
     warnings.push('Tamaño del texto base ≈ ' + ctx.bodySize + ' pt; los títulos se reconocen desde ≈ ' + (Math.round(ctx.bodySize * ctx.ratio * 10) / 10) + ' pt (calculado automáticamente).');
@@ -821,6 +879,7 @@
     if (mode === 'auto') {
       const r = detectFromPrintedToc(pages, o, ctx);
       if (r) { entries = r.entries; info = r.info; warnings.push(...r.warnings); }
+      else if (o.tocPages && o.tocPages.length) warnings.push('Las páginas de índice indicadas (' + rangeLabel(o.tocPages) + ') no contienen entradas reconocibles como «Título ..... página»; se detectan los títulos combinando regex, tipografía y estructura.');
       else warnings.push('No se encontró un índice impreso utilizable; se detectan los títulos combinando regex, tipografía y estructura.');
     }
     if (!info) {
@@ -835,7 +894,7 @@
     return { entries, warnings, totalChars, info, auto: { bodySize: ctx.bodySize, ratio: ctx.ratio } };
   }
 
-  const api = { analyze, detectRegex, detectTypographic, detectFromPrintedToc, buildLines, isRoman, norm };
+  const api = { analyze, detectRegex, detectTypographic, detectFromPrintedToc, buildLines, isRoman, norm, parseRange, locateToc, previewToc, rangeLabel };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TocAnalyzer = api;
 })(typeof self !== 'undefined' ? self : this);

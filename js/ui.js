@@ -398,6 +398,10 @@
     init() {
       setupDropzone($('#toc-drop'), $('#toc-file'), (f) => this.load(f), 'ÍNDICE');
       $('#toc-detect').addEventListener('click', () => this.detect());
+      $('#toc-mode').addEventListener('change', () => this.syncLocUi());
+      $('#toc-loc').addEventListener('change', () => this.syncLocUi());
+      $('#toc-range').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !$('#toc-detect').disabled) this.detect(); });
+      this.syncLocUi();
       $('#toc-cancel').addEventListener('click', () => this.cancel());
       $('#toc-generate').addEventListener('click', () => this.generate());
       $('#toc-download').addEventListener('click', () => this.download());
@@ -440,6 +444,7 @@
       const c = $('#toc-preview'); c.width = 0; c.height = 0; c.classList.remove('on'); $('#toc-preview-empty').classList.remove('hidden');
       ['#toc-prev', '#toc-next', '#toc-pageinput', '#toc-detect', '#toc-add', '#toc-sort', '#toc-clear', '#toc-generate'].forEach((s) => { $(s).disabled = true; });
       $('#toc-pagetotal').textContent = '/ —'; $('#toc-fileinfo').classList.add('hidden'); $('#toc-info').textContent = '';
+      $('#toc-confirm').classList.add('hidden'); this.pendingAsk = null;
       setProgress('toc', 0, 'Sin actividad'); this.render();
     },
 
@@ -475,8 +480,108 @@
       $('#toc-pageinput').value = p; $('#toc-prev').disabled = p <= 1; $('#toc-next').disabled = p >= this.N;
     },
 
+    // ---------- Ubicación del índice impreso ----------
+    syncLocUi() {
+      const auto = $('#toc-mode').value === 'auto';
+      const manual = $('#toc-loc').value === 'manual';
+      $('#toc-loc-field').classList.toggle('hidden', !auto);
+      $('#toc-range-field').classList.toggle('hidden', !(auto && manual));
+      $('#toc-loc-hint').classList.toggle('hidden', !(auto && manual));
+    },
+
+    /** Muestra el panel de confirmación y espera la respuesta. buttons: [{ id, text, cls }]. */
+    askToc({ title, text, entries, warn, buttons }) {
+      return new Promise((resolve) => {
+        const box = $('#toc-confirm'), list = $('#toc-confirm-list'), acts = $('#toc-confirm-actions');
+        $('#toc-confirm-title').textContent = title;
+        $('#toc-confirm-text').textContent = text;
+        box.classList.toggle('warn', !!warn);
+        list.innerHTML = '';
+        (entries || []).forEach((e) => {
+          const li = document.createElement('li');
+          if (e.isPart) li.className = 'part';
+          const t = document.createElement('span'); t.className = 't'; t.textContent = e.title;
+          const n = document.createElement('span'); n.className = 'n'; n.textContent = e.printed ? 'pág. ' + e.printed : '';
+          li.append(t, n); list.appendChild(li);
+        });
+        list.classList.toggle('hidden', !(entries && entries.length));
+        acts.innerHTML = '';
+        const done = (id) => { box.classList.add('hidden'); this.pendingAsk = null; resolve(id); };
+        buttons.forEach((b) => {
+          const el = document.createElement('button');
+          el.className = 'btn' + (b.cls ? ' ' + b.cls : ''); el.textContent = b.text;
+          el.addEventListener('click', () => done(b.id));
+          acts.appendChild(el);
+        });
+        this.pendingAsk = () => done('cancel');
+        box.classList.remove('hidden');
+        box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        const first = acts.querySelector('button'); if (first) first.focus({ preventScroll: true });
+      });
+    },
+
+    /** Averigua qué páginas son el índice (automático o manual) y lo confirma con la persona.
+     *  Devuelve { pages } | { skip: true } | { abort: true }. */
+    async resolveTocLocation() {
+      const manual = $('#toc-loc').value === 'manual';
+      let pages, pv;
+      if (manual) {
+        const r = TocAnalyzer.parseRange($('#toc-range').value, this.N);
+        if (r.error) { setStatus('toc', 'warn', r.error); Log.add('warn', 'ÍNDICE', r.error); $('#toc-range').focus(); return { abort: true }; }
+        pages = r.pages;
+        pv = TocAnalyzer.previewToc(this.pages, pages);
+        Log.add('info', 'ÍNDICE', 'Índice indicado a mano: páginas ' + TocAnalyzer.rangeLabel(pages) + ' (' + pv.count + ' entradas reconocidas).');
+        if (pv.count >= 2) return { pages };
+      } else {
+        pages = TocAnalyzer.locateToc(this.pages);
+        if (!pages) {
+          Log.add('warn', 'ÍNDICE', 'No se encontró automáticamente un índice impreso.');
+          const a = await this.askToc({
+            title: 'No encontré un índice impreso en el libro',
+            text: 'Puedes indicar tú las páginas donde está el índice, o continuar y detectar los títulos por su aspecto (regex y tipografía).',
+            warn: true,
+            buttons: [{ id: 'manual', text: 'Indicar páginas del índice', cls: 'primary' }, { id: 'skip', text: 'Continuar sin índice impreso' }]
+          });
+          return this.afterAsk(a, null);
+        }
+        pv = TocAnalyzer.previewToc(this.pages, pages);
+        Log.add('info', 'ÍNDICE', 'Posible índice en las páginas ' + TocAnalyzer.rangeLabel(pages) + ' (' + pv.count + ' entradas).');
+        this.preview(pages[0] + 1);
+        const a = await this.askToc({
+          title: '¿Es correcto este índice?',
+          text: 'Lo encontré en las páginas ' + TocAnalyzer.rangeLabel(pages) + ' del PDF (' + pv.count + ' entradas). Estas son las primeras; la vista previa muestra su primera página.',
+          entries: pv.entries.slice(0, 12),
+          buttons: [{ id: 'yes', text: 'Sí, es correcto', cls: 'success' }, { id: 'manual', text: 'No, indicar las páginas' }, { id: 'skip', text: 'Continuar sin índice impreso' }]
+        });
+        return this.afterAsk(a, pages);
+      }
+      // Rango manual con muy pocas entradas reconocidas
+      this.preview(pages[0] + 1);
+      const a = await this.askToc({
+        title: 'Casi no reconozco entradas en esas páginas',
+        text: 'En las páginas ' + TocAnalyzer.rangeLabel(pages) + ' encontré ' + pv.count + ' entrada(s) del tipo «Título ..... página». Revisa en la vista previa que sean las páginas del índice.',
+        entries: pv.entries.slice(0, 12), warn: true,
+        buttons: [{ id: 'force', text: 'Usar de todos modos', cls: 'primary' }, { id: 'manual', text: 'Cambiar las páginas' }, { id: 'skip', text: 'Continuar sin índice impreso' }]
+      });
+      return this.afterAsk(a, pages);
+    },
+
+    afterAsk(answer, pages) {
+      if (answer === 'yes' || answer === 'force') return { pages };
+      if (answer === 'skip') { Log.add('info', 'ÍNDICE', 'Se continúa sin usar el índice impreso.'); return { skip: true }; }
+      if (answer === 'manual') {
+        $('#toc-loc').value = 'manual'; this.syncLocUi();
+        if (pages && pages.length) $('#toc-range').value = TocAnalyzer.rangeLabel(pages).replace(/–/g, '-');
+        setStatus('toc', 'idle', 'Escribe las páginas del índice (por ejemplo 5-8) y pulsa «Detectar capítulos».');
+        $('#toc-range').focus(); $('#toc-range').select();
+        return { abort: true };
+      }
+      return { abort: true, cancelled: true };
+    },
+
     cancel() {
       this.cancelled = true;
+      if (this.pendingAsk) this.pendingAsk();
       if (this.worker) this.worker.terminate();
       Log.add('warn', 'ÍNDICE', 'Cancelado por el usuario.');
     },
@@ -495,9 +600,20 @@
           });
           Log.add('info', 'ÍNDICE', 'Texto extraído en ' + ((performance.now() - t0) / 1000).toFixed(1) + ' s.');
         }
+        let mode = $('#toc-mode').value;
+        const opts = { maxLevels: parseInt($('#toc-levels').value, 10) };
+        if (mode === 'auto') {
+          setProgress('toc', 88, 'Buscando el índice del libro'); await tick();
+          const loc = await this.resolveTocLocation();
+          if (loc.abort) {
+            if (loc.cancelled || this.cancelled) { setStatus('toc', 'idle', 'Proceso cancelado.'); setProgress('toc', 0, 'Cancelado'); }
+            else setProgress('toc', 0, 'Sin actividad');
+            return;
+          }
+          if (loc.skip) mode = 'both'; else opts.tocPages = loc.pages;
+        }
         setProgress('toc', 90, 'Detectando capítulos'); await tick();
-        const mode = $('#toc-mode').value;
-        const res = TocAnalyzer.analyze(this.pages, mode, { maxLevels: parseInt($('#toc-levels').value, 10) });
+        const res = TocAnalyzer.analyze(this.pages, mode, opts);
         res.warnings.forEach((w) => Log.add('warn', 'ÍNDICE', w));
         this.entries = res.entries; this.sel = null; this.render();
         const infoEl = $('#toc-info');
